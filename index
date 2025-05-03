@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grok Coin Price Tracker</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #2a2a72;
+            margin: 0;
+        }
+        .price-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 20px;
+            margin-bottom: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        .price {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #2a2a72;
+            margin: 10px 0;
+        }
+        .price-change {
+            font-size: 1.2rem;
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+        .positive {
+            color: #28a745;
+            background-color: rgba(40, 167, 69, 0.1);
+        }
+        .negative {
+            color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+        .neutral {
+            color: #6c757d;
+            background-color: rgba(108, 117, 125, 0.1);
+        }
+        .chart-container {
+            height: 300px;
+            margin: 20px 0;
+        }
+        .alert-box {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .alert-box.show {
+            display: block;
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            animation: flash 2s infinite;
+        }
+        @keyframes flash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #2a2a72;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #1d1d5b;
+        }
+        .settings {
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .settings h3 {
+            margin-top: 0;
+        }
+        .settings label {
+            display: block;
+            margin-bottom: 10px;
+        }
+        .settings input {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .history-log {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        .history-item {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Grok Coin Price Tracker</h1>
+            <p>Παρακολούθηση τιμής και πρόβλεψη</p>
+        </header>
+
+        <div class="alert-box" id="alertBox">
+            <strong>Πρόβλεψη ανόδου!</strong> Η τιμή του Grok Coin πιθανώς θα ανέβει σύντομα βάσει της τρέχουσας συμπεριφοράς της αγοράς.
+        </div>
+
+        <div class="price-container">
+            <p>Τρέχουσα τιμή Grok Coin</p>
+            <div class="price" id="currentPrice">$0.00</div>
+            <div class="price-change neutral" id="priceChange">0.00% (24h)</div>
+        </div>
+
+        <div class="chart-container" id="priceChart"></div>
+
+        <div class="controls">
+            <button id="toggleAlert">Απενεργοποίηση ειδοποιήσεων</button>
+            <button id="toggleSettings">Ρυθμίσεις</button>
+        </div>
+
+        <div class="settings" id="settingsPanel" style="display: none;">
+            <h3>Ρυθμίσεις ειδοποιήσεων</h3>
+            <label>
+                Όριο ποσοστιαίας αύξησης για ειδοποίηση (%)
+                <input type="number" id="thresholdInput" value="5" min="0.1" step="0.1">
+            </label>
+            <label>
+                Διάστημα ανανέωσης δεδομένων (δευτερόλεπτα)
+                <input type="number" id="refreshInput" value="30" min="5" step="5">
+            </label>
+            <button id="saveSettings">Αποθήκευση</button>
+        </div>
+
+        <div class="history-log" id="historyLog">
+            <h3>Ιστορικό τιμών</h3>
+            <!-- Εδώ θα εμφανίζονται οι καταγραφές τιμών -->
+        </div>
+
+        <footer>
+            <p>Disclaimer: Αυτή η εφαρμογή είναι μόνο για εκπαιδευτικούς σκοπούς. Οι προβλέψεις δεν αποτελούν επενδυτική συμβουλή.</p>
+        </footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <script>
+        // Βασικές ρυθμίσεις
+        let settings = {
+            alertThreshold: 5, // Ποσοστιαία αύξηση που θα ενεργοποιεί την ειδοποίηση
+            refreshInterval: 30, // Δευτερόλεπτα μεταξύ ανανεώσεων
+            alertsEnabled: true
+        };
+        
+        // Αρχικοποίηση δεδομένων τιμών
+        let priceData = {
+            timestamps: [],
+            prices: [],
+            changes: []
+        };
+        
+        // Αναφορές HTML στοιχείων
+        const currentPriceElement = document.getElementById('currentPrice');
+        const priceChangeElement = document.getElementById('priceChange');
+        const alertBoxElement = document.getElementById('alertBox');
+        const historyLogElement = document.getElementById('historyLog');
+        const toggleAlertButton = document.getElementById('toggleAlert');
+        const toggleSettingsButton = document.getElementById('toggleSettings');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const thresholdInput = document.getElementById('thresholdInput');
+        const refreshInput = document.getElementById('refreshInput');
+        const saveSettingsButton = document.getElementById('saveSettings');
+        
+        // Δημιουργία γραφήματος
+        const ctx = document.createElement('canvas');
+        document.getElementById('priceChart').appendChild(ctx);
+        const priceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Τιμή Grok Coin (USD)',
+                    data: [],
+                    borderColor: '#2a2a72',
+                    backgroundColor: 'rgba(42, 42, 114, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: {
+                        beginAtZero: false
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                }
+            }
+        });
+        
+        // Λειτουργία προσομοίωσης τιμής του Grok Coin (καθώς δεν υπάρχει πραγματικό API)
+        function simulatePrice() {
+            const now = new Date();
+            
+            // Αρχική τιμή αν δεν υπάρχουν δεδομένα
+            if (priceData.prices.length === 0) {
+                const initialPrice = (Math.random() * 10 + 20).toFixed(2); // Τιμή μεταξύ $20-$30
+                priceData.prices.push(parseFloat(initialPrice));
+                priceData.timestamps.push(now);
+                priceData.changes.push(0);
+                
+                updateUI(initialPrice, '0.00');
+                addToHistory(initialPrice, '0.00');
+                updateChart();
+                return;
+            }
+            
+            // Προσομοίωση μεταβολής τιμής με ελεγχόμενη τυχαιότητα
+            const lastPrice = priceData.prices[priceData.prices.length - 1];
+            const randomFactor = Math.random() * 2 - 1; // Τιμή μεταξύ -1 και 1
+            const volatility = 0.02; // Μεταβλητότητα 2%
+            
+            // Προσθήκη μικρής τάσης για να δημιουργηθούν patterns
+            const trendFactor = Math.sin(Date.now() / 100000) * 0.005;
+            
+            // Υπολογισμός νέας τιμής
+            let change = lastPrice * volatility * randomFactor + lastPrice * trendFactor;
+            let newPrice = lastPrice + change;
+            newPrice = Math.max(newPrice, 0.01); // Αποτροπή αρνητικών τιμών
+            newPrice = parseFloat(newPrice.toFixed(2));
+            
+            // Υπολογισμός ποσοστιαίας μεταβολής 24 ωρών
+            // Για την προσομοίωση, υπολογίζουμε από τα τελευταία 24 δείγματα (αν υπάρχουν)
+            const sampleSize = Math.min(24, priceData.prices.length);
+            const pastPrice = priceData.prices[priceData.prices.length - sampleSize];
+            const percentChange = ((newPrice - pastPrice) / pastPrice * 100).toFixed(2);
+            
+            // Αποθήκευση νέων δεδομένων
+            priceData.prices.push(newPrice);
+            priceData.timestamps.push(now);
+            priceData.changes.push(parseFloat(percentChange));
+            
+            // Περιορισμός στα τελευταία 100 δείγματα για εξοικονόμηση μνήμης
+            if (priceData.prices.length > 100) {
+                priceData.prices.shift();
+                priceData.timestamps.shift();
+                priceData.changes.shift();
+            }
+            
+            // Ενημέρωση διεπαφής
+            updateUI(newPrice, percentChange);
+            addToHistory(newPrice, percentChange);
+            updateChart();
+            
+            // Έλεγχος για ειδοποίηση
+            checkForAlert();
+        }
+        
+        // Ενημέρωση γραφήματος
+        function updateChart() {
+            // Μετατροπή χρονικών σημάτων σε ετικέτες
+            const labels = priceData.timestamps.map(timestamp => {
+                return moment(timestamp).format('HH:mm:ss');
+            });
+            
+            // Ενημέρωση δεδομένων γραφήματος
+            priceChart.data.labels = labels;
+            priceChart.data.datasets[0].data = priceData.prices;
+            priceChart.update();
+        }
+        
+        // Ενημέρωση στοιχείων διεπαφής
+        function updateUI(price, percentChange) {
+            currentPriceElement.textContent = `$${price}`;
+            priceChangeElement.textContent = `${percentChange}% (24h)`;
+            
+            // Ενημέρωση χρώματος βάσει της μεταβολής
+            priceChangeElement.className = 'price-change';
+            if (parseFloat(percentChange) > 0) {
+                priceChangeElement.classList.add('positive');
+            } else if (parseFloat(percentChange) < 0) {
+                priceChangeElement.classList.add('negative');
+            } else {
+                priceChangeElement.classList.add('neutral');
+            }
+        }
+        
+        // Προσθήκη εγγραφής στο ιστορικό
+        function addToHistory(price, percentChange) {
+            const time = moment().format('HH:mm:ss');
+            const changeClass = parseFloat(percentChange) > 0 ? 'positive' : 
+                            parseFloat(percentChange) < 0 ? 'negative' : 'neutral';
+            
+            const historyItem = document.createElement('div');
+            historyItem.className = 'history-item';
+            historyItem.innerHTML = `
+                <span>${time}</span> - 
+                <strong>$${price}</strong> 
+                <span class="${changeClass}">(${percentChange}%)</span>
+            `;
+            
+            historyLogElement.insertBefore(historyItem, historyLogElement.firstChild.nextSibling);
+            
+            // Περιορισμός εγγραφών ιστορικού
+            const maxHistoryItems = 50;
+            while (historyLogElement.children.length > maxHistoryItems + 1) { // +1 για την επικεφαλίδα
+                historyLogElement.removeChild(historyLogElement.lastChild);
+            }
+        }
+        
+        // Έλεγχος για την ενεργοποίηση ειδοποίησης
+        function checkForAlert() {
+            if (!settings.alertsEnabled) return;
+            
+            // Ανάλυση των τελευταίων τιμών για πρόβλεψη
+            const recentPrices = priceData.prices.slice(-5); // Τελευταίες 5 τιμές
+            
+            if (recentPrices.length < 5) return; // Χρειαζόμαστε τουλάχιστον 5 τιμές
+            
+            // Απλή πρόβλεψη: ελέγχουμε αν έχουμε συνεχή αύξηση και η συνολική αύξηση ξεπερνά το όριο
+            let increasing = true;
+            for (let i = 1; i < recentPrices.length; i++) {
+                if (recentPrices[i] <= recentPrices[i-1]) {
+                    increasing = false;
+                    break;
+                }
+            }
+            
+            const totalChange = ((recentPrices[recentPrices.length-1] - recentPrices[0]) / recentPrices[0]) * 100;
+            
+            if (increasing && totalChange >= settings.alertThreshold) {
+                showAlert();
+            } else {
+                hideAlert();
+            }
+        }
+        
+        // Εμφάνιση ειδοποίησης
+        function showAlert() {
+            alertBoxElement.classList.add('show');
+        }
+        
+        // Απόκρυψη ειδοποίησης
+        function hideAlert() {
+            alertBoxElement.classList.remove('show');
+        }
+        
+        // Εναλλαγή κατάστασης ειδοποιήσεων
+        toggleAlertButton.addEventListener('click', function() {
+            settings.alertsEnabled = !settings.alertsEnabled;
+            this.textContent = settings.alertsEnabled ? 'Απενεργοποίηση ειδοποιήσεων' : 'Ενεργοποίηση ειδοποιήσεων';
+            hideAlert(); // Απόκρυψη τυχόν ειδοποίησης
+        });
+        
+        // Εναλλαγή εμφάνισης πλαισίου ρυθμίσεων
+        toggleSettingsButton.addEventListener('click', function() {
+            settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
+        });
+        
+        // Αποθήκευση ρυθμίσεων
+        saveSettingsButton.addEventListener('click', function() {
+            const newThreshold = parseFloat(thresholdInput.value);
+            const newRefresh = parseInt(refreshInput.value);
+            
+            if (!isNaN(newThreshold) && newThreshold > 0) {
+                settings.alertThreshold = newThreshold;
+            }
+            
+            if (!isNaN(newRefresh) && newRefresh >= 5) {
+                settings.refreshInterval = newRefresh;
+                
+                // Επανεκκίνηση του διαστήματος ανανέωσης με τη νέα τιμή
+                clearInterval(refreshIntervalId);
+                refreshIntervalId = setInterval(simulatePrice, settings.refreshInterval * 1000);
+            }
+            
+            settingsPanel.style.display = 'none';
+        });
+        
+        // Αρχική ρύθμιση τιμών στα πεδία εισαγωγής
+        thresholdInput.value = settings.alertThreshold;
+        refreshInput.value = settings.refreshInterval;
+        
+        // Αρχικοποίηση και έναρξη ανανέωσης
+        simulatePrice(); // Άμεση αρχικοποίηση
+        let refreshIntervalId = setInterval(simulatePrice, settings.refreshInterval * 1000);
+    </script>
+</body>
+</html>
