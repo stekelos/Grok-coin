@@ -81,6 +81,11 @@
             border: 1px solid #c3e6cb;
             animation: flash 2s infinite;
         }
+        .alert-box.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
         @keyframes flash {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
@@ -188,7 +193,7 @@
         </div>
 
         <footer>
-            <p>Disclaimer: Αυτή η εφαρμογή είναι μόνο για εκπαιδευτικούς σκοπούς. Οι προβλέψεις δεν αποτελούν επενδυτική συμβουλή.</p>
+            <p>Disclaimer: Αυτή η εφαρμογή είναι μόνο για εκπαιδευτικούς σκοπούς. Οι προβλέψεις δεν αποτελούν επενδυτική συμβουλή. Δεδομένα από <a href="https://www.coingecko.com">CoinGecko</a>.</p>
         </footer>
     </div>
 
@@ -201,14 +206,18 @@
             refreshInterval: 30, // Δευτερόλεπτα μεταξύ ανανεώσεων
             alertsEnabled: true
         };
-        
+
         // Αρχικοποίηση δεδομένων τιμών
         let priceData = {
             timestamps: [],
             prices: [],
             changes: []
         };
-        
+
+        // Τελευταία γνωστή τιμή για fallback
+        let lastKnownPrice = null;
+        let lastKnownChange = null;
+
         // Αναφορές HTML στοιχείων
         const currentPriceElement = document.getElementById('currentPrice');
         const priceChangeElement = document.getElementById('priceChange');
@@ -220,7 +229,7 @@
         const thresholdInput = document.getElementById('thresholdInput');
         const refreshInput = document.getElementById('refreshInput');
         const saveSettingsButton = document.getElementById('saveSettings');
-        
+
         // Δημιουργία γραφήματος
         const ctx = document.createElement('canvas');
         document.getElementById('priceChart').appendChild(ctx);
@@ -260,84 +269,76 @@
                 }
             }
         });
-        
-        // Λειτουργία προσομοίωσης τιμής του Grok Coin (καθώς δεν υπάρχει πραγματικό API)
-        function simulatePrice() {
-            const now = new Date();
-            
-            // Αρχική τιμή αν δεν υπάρχουν δεδομένα
-            if (priceData.prices.length === 0) {
-                const initialPrice = (Math.random() * 10 + 20).toFixed(2); // Τιμή μεταξύ $20-$30
-                priceData.prices.push(parseFloat(initialPrice));
-                priceData.timestamps.push(now);
-                priceData.changes.push(0);
+
+        // Λειτουργία λήψης τιμής από το CoinGecko API
+        async function fetchPrice() {
+            try {
+                const response = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=grok');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
                 
-                updateUI(initialPrice, '0.00');
-                addToHistory(initialPrice, '0.00');
+                if (data.length === 0) {
+                    throw new Error('No data returned for Grok Coin');
+                }
+
+                const coinData = data[0];
+                const newPrice = parseFloat(coinData.current_price.toFixed(6));
+                const percentChange = parseFloat(coinData.price_change_percentage_24h.toFixed(2));
+                const now = new Date();
+
+                // Αποθήκευση δεδομένων
+                priceData.prices.push(newPrice);
+                priceData.timestamps.push(now);
+                priceData.changes.push(percentChange);
+
+                // Περιορισμός στα τελευταία 100 δείγματα
+                if (priceData.prices.length > 100) {
+                    priceData.prices.shift();
+                    priceData.timestamps.shift();
+                    priceData.changes.shift();
+                }
+
+                // Ενημέρωση τελευταίων γνωστών τιμών
+                lastKnownPrice = newPrice;
+                lastKnownChange = percentChange;
+
+                // Ενημέρωση διεπαφής
+                updateUI(newPrice, percentChange);
+                addToHistory(newPrice, percentChange);
                 updateChart();
-                return;
+
+                // Έλεγχος για ειδοποίηση
+                checkForAlert();
+
+                // Απόκρυψη τυχόν μηνυμάτων σφάλματος
+                hideError();
+            } catch (error) {
+                console.error('Error fetching price:', error);
+                showError('Αποτυχία λήψης δεδομένων. Εμφανίζεται η τελευταία γνωστή τιμή.');
+                if (lastKnownPrice !== null && lastKnownChange !== null) {
+                    updateUI(lastKnownPrice, lastKnownChange);
+                }
             }
-            
-            // Προσομοίωση μεταβολής τιμής με ελεγχόμενη τυχαιότητα
-            const lastPrice = priceData.prices[priceData.prices.length - 1];
-            const randomFactor = Math.random() * 2 - 1; // Τιμή μεταξύ -1 και 1
-            const volatility = 0.02; // Μεταβλητότητα 2%
-            
-            // Προσθήκη μικρής τάσης για να δημιουργηθούν patterns
-            const trendFactor = Math.sin(Date.now() / 100000) * 0.005;
-            
-            // Υπολογισμός νέας τιμής
-            let change = lastPrice * volatility * randomFactor + lastPrice * trendFactor;
-            let newPrice = lastPrice + change;
-            newPrice = Math.max(newPrice, 0.01); // Αποτροπή αρνητικών τιμών
-            newPrice = parseFloat(newPrice.toFixed(2));
-            
-            // Υπολογισμός ποσοστιαίας μεταβολής 24 ωρών
-            // Για την προσομοίωση, υπολογίζουμε από τα τελευταία 24 δείγματα (αν υπάρχουν)
-            const sampleSize = Math.min(24, priceData.prices.length);
-            const pastPrice = priceData.prices[priceData.prices.length - sampleSize];
-            const percentChange = ((newPrice - pastPrice) / pastPrice * 100).toFixed(2);
-            
-            // Αποθήκευση νέων δεδομένων
-            priceData.prices.push(newPrice);
-            priceData.timestamps.push(now);
-            priceData.changes.push(parseFloat(percentChange));
-            
-            // Περιορισμός στα τελευταία 100 δείγματα για εξοικονόμηση μνήμης
-            if (priceData.prices.length > 100) {
-                priceData.prices.shift();
-                priceData.timestamps.shift();
-                priceData.changes.shift();
-            }
-            
-            // Ενημέρωση διεπαφής
-            updateUI(newPrice, percentChange);
-            addToHistory(newPrice, percentChange);
-            updateChart();
-            
-            // Έλεγχος για ειδοποίηση
-            checkForAlert();
         }
-        
+
         // Ενημέρωση γραφήματος
         function updateChart() {
-            // Μετατροπή χρονικών σημάτων σε ετικέτες
             const labels = priceData.timestamps.map(timestamp => {
                 return moment(timestamp).format('HH:mm:ss');
             });
-            
-            // Ενημέρωση δεδομένων γραφήματος
+
             priceChart.data.labels = labels;
             priceChart.data.datasets[0].data = priceData.prices;
             priceChart.update();
         }
-        
+
         // Ενημέρωση στοιχείων διεπαφής
         function updateUI(price, percentChange) {
             currentPriceElement.textContent = `$${price}`;
             priceChangeElement.textContent = `${percentChange}% (24h)`;
-            
-            // Ενημέρωση χρώματος βάσει της μεταβολής
+
             priceChangeElement.className = 'price-change';
             if (parseFloat(percentChange) > 0) {
                 priceChangeElement.classList.add('positive');
@@ -347,13 +348,13 @@
                 priceChangeElement.classList.add('neutral');
             }
         }
-        
+
         // Προσθήκη εγγραφής στο ιστορικό
         function addToHistory(price, percentChange) {
             const time = moment().format('HH:mm:ss');
             const changeClass = parseFloat(percentChange) > 0 ? 'positive' : 
-                            parseFloat(percentChange) < 0 ? 'negative' : 'neutral';
-            
+                               parseFloat(percentChange) < 0 ? 'negative' : 'neutral';
+
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
             historyItem.innerHTML = `
@@ -361,92 +362,39 @@
                 <strong>$${price}</strong> 
                 <span class="${changeClass}">(${percentChange}%)</span>
             `;
-            
+
             historyLogElement.insertBefore(historyItem, historyLogElement.firstChild.nextSibling);
-            
-            // Περιορισμός εγγραφών ιστορικού
+
             const maxHistoryItems = 50;
-            while (historyLogElement.children.length > maxHistoryItems + 1) { // +1 για την επικεφαλίδα
+            while (historyLogElement.children.length > maxHistoryItems + 1) {
                 historyLogElement.removeChild(historyLogElement.lastChild);
             }
         }
-        
+
         // Έλεγχος για την ενεργοποίηση ειδοποίησης
         function checkForAlert() {
             if (!settings.alertsEnabled) return;
-            
-            // Ανάλυση των τελευταίων τιμών για πρόβλεψη
-            const recentPrices = priceData.prices.slice(-5); // Τελευταίες 5 τιμές
-            
-            if (recentPrices.length < 5) return; // Χρειαζόμαστε τουλάχιστον 5 τιμές
-            
-            // Απλή πρόβλεψη: ελέγχουμε αν έχουμε συνεχή αύξηση και η συνολική αύξηση ξεπερνά το όριο
-            let increasing = true;
-            for (let i = 1; i < recentPrices.length; i++) {
-                if (recentPrices[i] <= recentPrices[i-1]) {
-                    increasing = false;
-                    break;
-                }
-            }
-            
-            const totalChange = ((recentPrices[recentPrices.length-1] - recentPrices[0]) / recentPrices[0]) * 100;
-            
-            if (increasing && totalChange >= settings.alertThreshold) {
+
+            const recentChanges = priceData.changes.slice(-5);
+            if (recentChanges.length < 5) return;
+
+            // Έλεγχος αν η μέση μεταβολή 24h των τελευταίων 5 μετρήσεων υπερβαίνει το όριο
+            const avgChange = recentChanges.reduce((sum, change) => sum + change, 0) / recentChanges.length;
+
+            if (avgChange >= settings.alertThreshold) {
                 showAlert();
             } else {
                 hideAlert();
             }
         }
-        
+
         // Εμφάνιση ειδοποίησης
         function showAlert() {
             alertBoxElement.classList.add('show');
+            alertBoxElement.classList.remove('error');
+            alertBoxElement.innerHTML = `
+                <strong>Πρόβλεψη ανόδου!</strong> Η τιμή του Grok Coin πιθανώς θα ανέβει σύντομα βάσει της τρέχουσας συμπεριφοράς της αγοράς.
+            `;
         }
-        
-        // Απόκρυψη ειδοποίησης
-        function hideAlert() {
-            alertBoxElement.classList.remove('show');
-        }
-        
-        // Εναλλαγή κατάστασης ειδοποιήσεων
-        toggleAlertButton.addEventListener('click', function() {
-            settings.alertsEnabled = !settings.alertsEnabled;
-            this.textContent = settings.alertsEnabled ? 'Απενεργοποίηση ειδοποιήσεων' : 'Ενεργοποίηση ειδοποιήσεων';
-            hideAlert(); // Απόκρυψη τυχόν ειδοποίησης
-        });
-        
-        // Εναλλαγή εμφάνισης πλαισίου ρυθμίσεων
-        toggleSettingsButton.addEventListener('click', function() {
-            settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
-        });
-        
-        // Αποθήκευση ρυθμίσεων
-        saveSettingsButton.addEventListener('click', function() {
-            const newThreshold = parseFloat(thresholdInput.value);
-            const newRefresh = parseInt(refreshInput.value);
-            
-            if (!isNaN(newThreshold) && newThreshold > 0) {
-                settings.alertThreshold = newThreshold;
-            }
-            
-            if (!isNaN(newRefresh) && newRefresh >= 5) {
-                settings.refreshInterval = newRefresh;
-                
-                // Επανεκκίνηση του διαστήματος ανανέωσης με τη νέα τιμή
-                clearInterval(refreshIntervalId);
-                refreshIntervalId = setInterval(simulatePrice, settings.refreshInterval * 1000);
-            }
-            
-            settingsPanel.style.display = 'none';
-        });
-        
-        // Αρχική ρύθμιση τιμών στα πεδία εισαγωγής
-        thresholdInput.value = settings.alertThreshold;
-        refreshInput.value = settings.refreshInterval;
-        
-        // Αρχικοποίηση και έναρξη ανανέωσης
-        simulatePrice(); // Άμεση αρχικοποίηση
-        let refreshIntervalId = setInterval(simulatePrice, settings.refreshInterval * 1000);
-    </script>
-</body>
-</html>
+
+        // Απόκρυψη ειδοποί
